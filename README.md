@@ -1,6 +1,6 @@
 # Maximum Cumulative Water Deficit - MCWD: a R language script
 
-DOI: 10.5281/zenodo.2625772 (https://doi.org/10.5281/10.5281/zenodo.2652629)
+DOI: 10.5281/zenodo.2625772 (https://doi.org/10.5281/zenodo.2652629)
 
 Script for the calculation of MCWD (Maximum Cumulative Water Deficit) in rainfall raster data (e.g. CHIRPS and TRMM). Calculation based in Aragão et al. (2007, https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2006GL028946).
 
