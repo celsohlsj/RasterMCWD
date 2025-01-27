@@ -1,53 +1,58 @@
-## MCWD (Maximun Cumulative Water Deficit) Script ##
+## MCWD (Maximum Cumulative Water Deficit) Script ##
 # Reference: https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2006GL028946 #
 
-# Library
-library(raster)
-library(snow)
+# Libraries
+library(terra)
+library(parallel)
 
-setwd("directory-here") # Directory with Monthly Rainfall Rasters
+# Set working directory
+setwd("directory-here") # Directory containing monthly rainfall rasters
 
-# List of Monthly Rainfall Rasters
-month.rainfall = list.files("./", pattern = '.tif$', full.names = T)
+# List of monthly rainfall rasters
+monthly_rainfall_files <- list.files("./", pattern = '.tif$', full.names = TRUE)
 
-wd = stack(month.rainfall)-100 # 100 is the evapotranspiration in mm/month
+# Load rasters and calculate water deficit
+rainfall_stack <- rast(monthly_rainfall_files)
+water_deficit <- rainfall_stack - 100 # 100 mm/month constant evapotranspiration
 
-# MCWD Function
-mcwd.f = function(x){
-  result= as.numeric(x)
-  for(i in 1:length(result)){
-    wdn = result[i]
-    wdn1 = result[i-1]
+# MCWD function
+mcwd_function <- function(values) {
+  result <- as.numeric(values)
+  for (i in seq_along(result)) {
+    current_deficit <- result[i]
+    previous_deficit <- ifelse(i == 1, 0, result[i - 1])
     
-    if(i==1){
-      if(wdn>0){ result[i]=0}
-      else{result[i]=wdn}
-    }
-    
-    if(i!=1){
-      cwd = wdn1+wdn
-      if( cwd < 0){ result[i]=cwd}
-      else{result[i]=0}
+    if (i == 1) {
+      result[i] <- ifelse(current_deficit > 0, 0, current_deficit)
+    } else {
+      cumulative_deficit <- previous_deficit + current_deficit
+      result[i] <- ifelse(cumulative_deficit < 0, cumulative_deficit, 0)
     }
   }
-return(result)  
+  return(result)
 }
 
-# Applying the Function (Parallel)
-beginCluster(n=10) #Change according to the number of core on your computer
-cwd = clusterR(wd, calc, args=list(fun=mcwd.f))
-endCluster()
-writeRaster(cwd, "./MCWD/CWD_1981_2020.tif") # Saving the Monthly CWD
+# Apply the function in parallel
+num_cores <- detectCores() - 1 # Detect available cores and use one less
+cl <- makeCluster(num_cores)
+clusterExport(cl, list("mcwd_function"))
+water_deficit_mcwd <- app(water_deficit, mcwd_function, cores = num_cores)
+stopCluster(cl)
 
-# Determining the Annual MCDW
-ano = 1981 # Start Year of the Temporal Series
-for (i in seq(1,Y_Y,12)) { # Replace "Y_Y" by the Total Months of the Time Series
-  cwd.a = cwd[[i:(i+11)]]
-  mcwd.a = min(cwd.a)
-  j = 121188*(1980-ano)
-  mcwd.a[mcwd.a == j] = NA
-  # Saving the Annual MCWD
-  print(paste0(ano, " - ", Sys.time()))
-  writeRaster(mcwd.a, paste0("./MCWD/MCWD_", ano, ".tif")) # Create a Folder Called "MCWD" in your Working Directory
-  ano = ano+1
+# Save monthly MCWD data
+if (!dir.exists("./MCWD")) dir.create("./MCWD")
+writeRaster(water_deficit_mcwd, "./MCWD/MCWD_Monthly_1981_2020.tif", overwrite = TRUE)
+
+# Calculating annual MCWD
+start_year <- 1981 # Start year of the time series
+total_months <- nlyr(water_deficit_mcwd) # Total number of months in the time series
+
+for (i in seq(1, total_months, 12)) {
+  annual_stack <- water_deficit_mcwd[[i:(i + 11)]]
+  annual_mcwd <- app(annual_stack, min, na.rm = TRUE) # Calculate the annual minimum
+  
+  # Save the annual MCWD
+  current_year <- start_year + ((i - 1) / 12)
+  print(paste0("Year: ", current_year, " - ", Sys.time()))
+  writeRaster(annual_mcwd, paste0("./MCWD/MCWD_", current_year, ".tif"), overwrite = TRUE)
 }
